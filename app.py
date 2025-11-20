@@ -5,36 +5,35 @@ import json
 
 app = Flask(__name__)
 
-# Your existing SCENARIOS config (Keep it exactly as is)
+# --- CONFIGURATION ---
 SCENARIOS = {
     "general": {
         "name": "💬 Обычный чат",
         "temperature": 0.7,
         "max_tokens": 1024,
         "welcome_message": "Здравствуйте! Я ваш ИИ помощник...",
-        "system_prompt": "Ты - полезный AI ассистент. Отвечай на русском языке..."
+        "system_prompt": "Ты - полезный AI ассистент. У тебя отличная память, ты помнишь весь контекст нашей беседы. Отвечай на русском языке."
     },
-    # ... other scenarios ...
-     "tech": {
+    "tech": {
         "name": "🔧 Технический помощник", 
         "temperature": 0.3,
         "max_tokens": 2048,
-        "welcome_message": "...",
-        "system_prompt": "Ты - технический эксперт..."
+        "welcome_message": "Готов к отладке кода.",
+        "system_prompt": "Ты - технический эксперт и программист. Анализируй код, ищи ошибки и предлагай оптимизацию."
     },
     "creative": {
         "name": "🎨 Креативный режим",
         "temperature": 0.9,
         "max_tokens": 1536,
-        "welcome_message": "...",
-        "system_prompt": "Ты - креативный писатель..."
+        "welcome_message": "Давай творить!",
+        "system_prompt": "Ты - креативный писатель. Используй богатый язык, метафоры и нестандартные идеи."
     },
     "ideas": {
         "name": "💡 Генератор идей",
         "temperature": 0.8,
         "max_tokens": 1024,
-        "welcome_message": "...",
-        "system_prompt": "Ты - специалист по генерации идей..."
+        "welcome_message": "Нужны идеи?",
+        "system_prompt": "Ты - специалист по мозговому штурму. Предлагай списки идей, концепции и стратегии."
     }
 }
 
@@ -44,16 +43,14 @@ def get_ai_response(history, scenario="general", temp_override=None, tokens_over
     
     config = SCENARIOS.get(scenario, SCENARIOS["general"])
     
-    # LOGIC: Use slider value if provided, otherwise use default
     final_temp = float(temp_override) if temp_override is not None else config["temperature"]
     final_tokens = int(tokens_override) if tokens_override is not None else config["max_tokens"]
 
-    # IMPROVEMENT: Use the official 'system_instruction' field
     payload = {
         "system_instruction": {
             "parts": [{"text": config["system_prompt"]}]
         },
-        "contents": history, # We now pass the full history list
+        "contents": history, 
         "generationConfig": {
             "temperature": final_temp,
             "maxOutputTokens": final_tokens,
@@ -70,38 +67,49 @@ def get_ai_response(history, scenario="general", temp_override=None, tokens_over
         if "candidates" in result and len(result["candidates"]) > 0:
             return result["candidates"][0]["content"]["parts"][0]["text"]
         else:
-            return "Error: No response from AI"
+            print(f"AI Error Response: {result}") # Лог ошибки от Google
+            return "Error: Empty response from AI"
     except Exception as e:
-        print(f"API Error: {e}")
+        print(f"API Connection Error: {e}")
         return f"Error connecting to AI: {str(e)}"
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.get_json()
     
-    # The app can now send a 'history' array OR just a 'message'
-    # If sending 'history', it should look like: 
-    # [{"role": "user", "parts": [{"text": "Hi"}]}, {"role": "model", "parts": [{"text": "Hello"}]}]
+    # 1. Читаем данные
     history = data.get('history', [])
     message = data.get('message', '')
     scenario = data.get('scenario', 'general')
-    
-    # Slider inputs
     temp = data.get('temperature')
     tokens = data.get('max_tokens')
 
-    # If there is no history but there is a message, start a new history
+    # 2. ЛОГИРОВАНИЕ (Смотри в консоль сервера!)
+    print(f"\n--- NEW REQUEST ---")
+    print(f"Scenario: {scenario}")
+    print(f"Received 'history' length: {len(history)}") # Сколько сообщений пришло
+    print(f"Received 'message': {message}")
+    
+    # 3. Логика обработки
+    # Если пришел список history - используем его.
+    # Если history пустой, но есть message (старая версия клиента) - создаем новый список.
     if not history and message:
+        print("⚠️ WARNING: Using fallback (Message only mode)")
         history = [{"role": "user", "parts": [{"text": message}]}]
     elif message:
-        # Append current message to existing history
+        # Если зачем-то прислали и то и то, добавляем сообщение в конец
+        # Но твой новый Android код message не шлет, так что этот блок не должен срабатывать
+        print("⚠️ Adding message to existing history")
         history.append({"role": "user", "parts": [{"text": message}]})
 
     if not history:
          return jsonify({"error": "No message or history provided"}), 400
 
-    # Commands logic (Optional: You can keep your command logic here if you want)
-    
+    # Для отладки: выводим последнее сообщение, которое уйдет в ИИ
+    if len(history) > 0:
+        print(f"Sending {len(history)} messages to Gemini. Last one: {history[-1]}")
+
+    # 4. Запрос
     ai_text = get_ai_response(history, scenario, temp, tokens)
 
     return jsonify({
@@ -109,7 +117,9 @@ def chat():
         "scenario": scenario
     })
 
-# ... Keep your other routes (welcome, scenarios, etc.) ...
+@app.route('/', methods=['GET'])
+def home():
+    return "AI Server is Running!"
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
