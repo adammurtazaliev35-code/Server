@@ -5,154 +5,111 @@ import json
 
 app = Flask(__name__)
 
-# Конфигурации сценариев
+# Your existing SCENARIOS config (Keep it exactly as is)
 SCENARIOS = {
     "general": {
         "name": "💬 Обычный чат",
         "temperature": 0.7,
         "max_tokens": 1024,
-        "welcome_message": "Здравствуйте! Я ваш ИИ помощник. Готов помочь с любыми вопросами! 🤖\n\n💡 Используйте команды: /general, /tech, /creative, /ideas",
-        "system_prompt": "Ты - полезный AI ассистент. Отвечай на русском языке. Будь дружелюбным, поддерживающим и помогай с различными вопросами."
+        "welcome_message": "Здравствуйте! Я ваш ИИ помощник...",
+        "system_prompt": "Ты - полезный AI ассистент. Отвечай на русском языке..."
     },
-    "tech": {
+    # ... other scenarios ...
+     "tech": {
         "name": "🔧 Технический помощник", 
         "temperature": 0.3,
         "max_tokens": 2048,
-        "welcome_message": "Здравствуйте! Я ваш технический помощник. Готов помочь с кодом, техническими проблемами и объяснением сложных концептов! 🔧\n\n💡 Используйте команды: /general, /tech, /creative, /ideas",
-        "system_prompt": "Ты - технический эксперт. Давай точные, структурированные ответы. Объясняй сложные концепции простыми словами. Будь внимателен к деталям."
+        "welcome_message": "...",
+        "system_prompt": "Ты - технический эксперт..."
     },
     "creative": {
         "name": "🎨 Креативный режим",
         "temperature": 0.9,
         "max_tokens": 1536,
-        "welcome_message": "Здравствуйте! Я ваш креативный помощник. Готов помочь с творческими задачами, генерацией идей и художественными проектами! 🎨\n\n💡 Используйте команды: /general, /tech, /creative, /ideas",
-        "system_prompt": "Ты - креативный писатель и генератор идей. Будь оригинальным, вдохновляющим и нестандартным. Предлагай необычные решения и творческие подходы."
+        "welcome_message": "...",
+        "system_prompt": "Ты - креативный писатель..."
     },
     "ideas": {
         "name": "💡 Генератор идей",
         "temperature": 0.8,
         "max_tokens": 1024,
-        "welcome_message": "Здравствуйте! Я ваш генератор идей. Готов помочь придумывать новые концепции, проекты и нестандартные решения! 💡\n\n💡 Используйте команды: /general, /tech, /creative, /ideas",
-        "system_prompt": "Ты - специалист по генерации идей. Помогай придумывать новые концепции, проекты и решения. Предлагай несколько вариантов и развивай мысли."
+        "welcome_message": "...",
+        "system_prompt": "Ты - специалист по генерации идей..."
     }
 }
 
-def get_ai_response(message, scenario="general"):
+def get_ai_response(history, scenario="general", temp_override=None, tokens_override=None):
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return "❌ Ошибка: API ключ не настроен"
-    
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     
-    # Получаем настройки для выбранного сценария
     config = SCENARIOS.get(scenario, SCENARIOS["general"])
     
-    # Форматируем промпт с системной инструкцией
-    full_prompt = f"{config['system_prompt']}\n\nПользователь: {message}"
-    
-    data = {
-        "contents": [{
-            "parts": [{
-                "text": full_prompt
-            }]
-        }],
+    # LOGIC: Use slider value if provided, otherwise use default
+    final_temp = float(temp_override) if temp_override is not None else config["temperature"]
+    final_tokens = int(tokens_override) if tokens_override is not None else config["max_tokens"]
+
+    # IMPROVEMENT: Use the official 'system_instruction' field
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": config["system_prompt"]}]
+        },
+        "contents": history, # We now pass the full history list
         "generationConfig": {
-            "temperature": config["temperature"],
-            "maxOutputTokens": config["max_tokens"],
+            "temperature": final_temp,
+            "maxOutputTokens": final_tokens,
             "topP": 0.95,
             "topK": 40
         }
     }
     
     try:
-        response = requests.post(url, json=data, timeout=30)
+        response = requests.post(url, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
         
         if "candidates" in result and len(result["candidates"]) > 0:
             return result["candidates"][0]["content"]["parts"][0]["text"]
         else:
-            return "Не удалось получить ответ от ИИ"
-            
+            return "Error: No response from AI"
     except Exception as e:
-        return f"❌ Ошибка подключения: {str(e)}"
+        print(f"API Error: {e}")
+        return f"Error connecting to AI: {str(e)}"
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    try:
-        data = request.get_json()
-        message = data.get('message', '')
-        scenario = data.get('scenario', 'general')
-        
-        if not message:
-            return jsonify({"error": "Сообщение не может быть пустым"}), 400
-        
-        # Проверяем команды смены сценария
-        if message.startswith('/'):
-            command = message[1:].lower().strip()
-            if command in SCENARIOS:
-                scenario_info = SCENARIOS[command]
-                return jsonify({
-                    "response": f"✅ Режим изменен на: {scenario_info['name']}\n\n{scenario_info['welcome_message']}",
-                    "scenario": command,
-                    "scenario_name": scenario_info["name"]
-                })
-            else:
-                available_commands = ", ".join([f"/{key}" for key in SCENARIOS.keys()])
-                return jsonify({
-                    "response": f"❌ Неизвестная команда. Доступные команды:\n{available_commands}",
-                    "scenario": scenario
-                })
-        
-        # Обычный запрос к ИИ
-        response = get_ai_response(message, scenario)
-        
-        return jsonify({
-            "response": response,
-            "scenario": scenario,
-            "scenario_name": SCENARIOS[scenario]["name"]
-        })
-        
-    except Exception as e:
-        return jsonify({"error": f"Ошибка сервера: {str(e)}"}), 500
+    data = request.get_json()
+    
+    # The app can now send a 'history' array OR just a 'message'
+    # If sending 'history', it should look like: 
+    # [{"role": "user", "parts": [{"text": "Hi"}]}, {"role": "model", "parts": [{"text": "Hello"}]}]
+    history = data.get('history', [])
+    message = data.get('message', '')
+    scenario = data.get('scenario', 'general')
+    
+    # Slider inputs
+    temp = data.get('temperature')
+    tokens = data.get('max_tokens')
 
-@app.route('/api/welcome', methods=['POST'])
-def welcome():
-    """Возвращает приветственное сообщение для сценария"""
-    try:
-        data = request.get_json()
-        scenario = data.get('scenario', 'general')
-        
-        config = SCENARIOS.get(scenario, SCENARIOS["general"])
-        
-        return jsonify({
-            "response": config["welcome_message"],
-            "scenario": scenario,
-            "scenario_name": config["name"]
-        })
-        
-    except Exception as e:
-        return jsonify({"error": f"Ошибка: {str(e)}"}), 500
+    # If there is no history but there is a message, start a new history
+    if not history and message:
+        history = [{"role": "user", "parts": [{"text": message}]}]
+    elif message:
+        # Append current message to existing history
+        history.append({"role": "user", "parts": [{"text": message}]})
 
-@app.route('/api/scenarios', methods=['GET'])
-def get_scenarios():
-    """Возвращает список доступных сценариев"""
-    scenarios_list = {key: value["name"] for key, value in SCENARIOS.items()}
-    return jsonify({"scenarios": scenarios_list})
+    if not history:
+         return jsonify({"error": "No message or history provided"}), 400
 
-@app.route('/')
-def home():
+    # Commands logic (Optional: You can keep your command logic here if you want)
+    
+    ai_text = get_ai_response(history, scenario, temp, tokens)
+
     return jsonify({
-        "message": "AI Chat Server with Scenarios is running!",
-        "status": "active",
-        "model": "Gemini 2.0 Flash",
-        "available_scenarios": list(SCENARIOS.keys()),
-        "endpoints": {
-            "chat": "POST /api/chat",
-            "welcome": "POST /api/welcome", 
-            "scenarios": "GET /api/scenarios"
-        }
+        "response": ai_text,
+        "scenario": scenario
     })
+
+# ... Keep your other routes (welcome, scenarios, etc.) ...
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
