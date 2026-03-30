@@ -1,157 +1,70 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # Добавьте это, чтобы фронтенд мог достучаться до сервера
 import os
 import requests
-import json
 
 app = Flask(__name__)
+CORS(app) # Разрешаем запросы с вашего сайта
 
-# --- CONFIGURATION ---
-SCENARIOS = {
-    "general": {
-        "name": "💬 Обычный чат",
-        "temperature": 0.7,
-        "max_tokens": 1024,
-        "welcome_message": "Привет! Я готов помочь с любым вопросом.",
-        "system_prompt": """
-Ты — дружелюбный, эрудированный и полезный ИИ-ассистент. 
-Твоя цель — давать четкие, точные и понятные ответы на русском языке.
-Если вопрос сложный — разбивай ответ на пункты.
-У тебя отличная память, используй контекст беседы для более точных ответов.
-Избегай воды, старайся быть кратким, но информативным.
-"""
-    },
-    "tech": {
-        "name": "🔧 Технический эксперт", 
-        "temperature": 0.2, # Снизил температуру для большей точности кода
-        "max_tokens": 4096, # Увеличил токены для длинных листингов кода
-        "welcome_message": "Режим Senior Developer активирован. Жду твой код или задачу.",
-        "system_prompt": """
-Ты — опытный Senior Software Engineer и технический архитектор. 
-Твои принципы: Чистый код (Clean Code), SOLID, DRY и безопасность.
-
-Твои инструкции:
-1. КОД: Всегда оборачивай код в тройные кавычки с указанием языка (например: ```kotlin или ```python).
-2. АНАЛИЗ: Если тебе присылают код с ошибкой — сначала объясни причину ошибки, потом дай исправленный вариант.
-3. СТИЛЬ: Пиши идиоматичный код, используй современные возможности языков. Добавляй короткие комментарии к сложным местам.
-4. Android/Kotlin: Если вопрос про Android, используй современные подходы (Coroutines, Flow, Jetpack Compose/ViewBinding, MVVM), если не попросили иное.
-5. Python: Следуй PEP8.
-6. Отвечай четко, профессионально, без лишних вступлений.
-"""
-    },
-    "creative": {
-        "name": "🎨 Креативный писатель",
-        "temperature": 0.9,
-        "max_tokens": 2048,
-        "welcome_message": "Вдохновение включено. О чем напишем сегодня?",
-        "system_prompt": """
-Ты — талантливый писатель, сценарист и поэт. 
-Твой стиль — живой, образный, метафоричный и эмоциональный.
-Избегай клише и канцеляризмов. Используй принцип "Show, don't tell" (Показывай, а не рассказывай).
-Твоя задача — создавать увлекательные тексты, будь то рассказ, стихотворение, эссе или поздравление.
-Ты можешь менять стиль (от нуара до фэнтези) по запросу пользователя.
-"""
-    },
-    "ideas": {
-        "name": "💡 Генератор идей",
-        "temperature": 0.8,
-        "max_tokens": 1500,
-        "welcome_message": "Мозговой штурм начинается! Какая тема?",
-        "system_prompt": """
-Ты — эксперт по креативному мышлению, стартапам и стратегическому планированию.
-Твоя задача — генерировать нестандартные, но реализуемые идеи.
-Когда тебя просят придумать идеи:
-1. Используй списки (bullet points) или нумерацию.
-2. Оценивай идеи: пиши плюсы, минусы и возможные риски.
-3. Предлагай конкретные первые шаги для реализации.
-4. Смотри на проблему под разными углами (техническим, маркетинговым, пользовательским).
-"""
-    }
+# --- БАЗА ЗНАНИЙ ПО МОДЕЛЯМ (Model-Specific Hints) ---
+MODEL_GUIDES = {
+    "gpt-4o": "Use Markdown for hierarchy. Focus on 'Chain of Thought'. Use system roles like 'Act as [Role]'.",
+    "claude-3.5-sonnet": "Structure instructions using XML tags (e.g., <instructions>, <context>). Claude prefers clear separation of data and tasks.",
+    "gemini-2.0-pro": "Provide clear examples (few-shot). Gemini responds well to 'Instruction: ' and 'Constraint: ' labels.",
+    "deepseek-v3": "Be extremely precise with technical requirements. Use step-by-step logic and explicit constraints.",
+    "dalle-3": "Focus on lighting, composition, medium (oil, photo), and art style. Avoid negative words; describe what SHOULD be there.",
+    "midjourney": "Use descriptive keywords separated by commas. Add parameters like --ar 16:9 or --stylize at the end."
 }
 
-def get_ai_response(history, scenario="general", temp_override=None, tokens_override=None):
+def refine_prompt_logic(user_input, target_model, use_instructions):
     api_key = os.getenv("GEMINI_API_KEY")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+
+    # Подготовка подсказки для самого Gemini (как он должен улучшить промпт)
+    system_instruction = f"""
+    You are an expert Prompt Engineer. Your task is to transform a raw user request into a high-quality, professional prompt.
+    Target Model: {target_model}
     
-    config = SCENARIOS.get(scenario, SCENARIOS["general"])
-    
-    final_temp = float(temp_override) if temp_override is not None else config["temperature"]
-    final_tokens = int(tokens_override) if tokens_override is not None else config["max_tokens"]
+    Rules:
+    1. Improve clarity, detail, and professional vocabulary.
+    2. If the user put text in quotes "" or parentheses (), treat those as strict instructions/constraints.
+    3. If 'use_instructions' is TRUE, you MUST return the result in two clear sections: 
+       - 'PROMPT': The refined main request.
+       - 'INSTRUCTIONS': A list of specific constraints AND technical tips for {target_model} (based on: {MODEL_GUIDES.get(target_model, 'general optimization')}).
+    4. Return ONLY the improved text, no conversational preamble.
+    """
 
     payload = {
-        "system_instruction": {
-            "parts": [{"text": config["system_prompt"]}]
-        },
-        "contents": history, 
-        "generationConfig": {
-            "temperature": final_temp,
-            "maxOutputTokens": final_tokens,
-            "topP": 0.95,
-            "topK": 40
-        }
+        "system_instruction": {"parts": [{"text": system_instruction}]},
+        "contents": [{"role": "user", "parts": [{"text": f"Refine this prompt. Use_instructions={use_instructions}. Input: {user_input}"}]}],
+        "generationConfig": {"temperature": 0.5, "maxOutputTokens": 2048}
     }
-    
+
     try:
         response = requests.post(url, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
-        
-        if "candidates" in result and len(result["candidates"]) > 0:
-            return result["candidates"][0]["content"]["parts"][0]["text"]
-        else:
-            print(f"AI Error Response: {result}") # Лог ошибки от Google
-            return "Error: Empty response from AI"
+        return result["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        print(f"API Connection Error: {e}")
-        return f"Error connecting to AI: {str(e)}"
+        return f"Error: {str(e)}"
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
+@app.route('/api/refine', methods=['POST'])
+def refine():
     data = request.get_json()
+    user_prompt = data.get('prompt', '')
+    target_model = data.get('model', 'gpt-4o')
+    use_instructions = data.get('use_instructions', False)
+
+    if not user_prompt:
+        return jsonify({"error": "Prompt is empty"}), 400
+
+    refined_text = refine_prompt_logic(user_prompt, target_model, use_instructions)
     
-    # 1. Читаем данные
-    history = data.get('history', [])
-    message = data.get('message', '')
-    scenario = data.get('scenario', 'general')
-    temp = data.get('temperature')
-    tokens = data.get('max_tokens')
-
-    # 2. ЛОГИРОВАНИЕ (Смотри в консоль сервера!)
-    print(f"\n--- NEW REQUEST ---")
-    print(f"Scenario: {scenario}")
-    print(f"Received 'history' length: {len(history)}") # Сколько сообщений пришло
-    print(f"Received 'message': {message}")
-    
-    # 3. Логика обработки
-    # Если пришел список history - используем его.
-    # Если history пустой, но есть message (старая версия клиента) - создаем новый список.
-    if not history and message:
-        print("⚠️ WARNING: Using fallback (Message only mode)")
-        history = [{"role": "user", "parts": [{"text": message}]}]
-    elif message:
-        # Если зачем-то прислали и то и то, добавляем сообщение в конец
-        # Но твой новый Android код message не шлет, так что этот блок не должен срабатывать
-        print("⚠️ Adding message to existing history")
-        history.append({"role": "user", "parts": [{"text": message}]})
-
-    if not history:
-         return jsonify({"error": "No message or history provided"}), 400
-
-    # Для отладки: выводим последнее сообщение, которое уйдет в ИИ
-    if len(history) > 0:
-        print(f"Sending {len(history)} messages to Gemini. Last one: {history[-1]}")
-
-    # 4. Запрос
-    ai_text = get_ai_response(history, scenario, temp, tokens)
-
-    return jsonify({
-        "response": ai_text,
-        "scenario": scenario
-    })
+    return jsonify({"refined_prompt": refined_text})
 
 @app.route('/', methods=['GET'])
 def home():
-    return "AI Server is Running!"
+    return "Prompt Refiner API is Running!"
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
