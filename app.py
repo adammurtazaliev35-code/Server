@@ -95,6 +95,35 @@ def save_prompt():
         conn.commit()
     return jsonify({"success": True})
 
+@app.route('/api/get_last_prompts/<int:user_id>', methods=['GET'])
+def get_last_prompts(user_id):
+    result = {"positive": None, "negative": None}
+    
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        
+        # Получаем последний положительный промпт
+        cursor.execute("""
+            SELECT input_text, output_text FROM saved_prompts 
+            WHERE user_id = ? AND prompt_type = 'positive' 
+            ORDER BY created_at DESC LIMIT 1
+        """, (user_id,))
+        pos = cursor.fetchone()
+        if pos:
+            result["positive"] = {"input": pos[0], "output": pos[1]}
+            
+        # Получаем последний отрицательный промпт
+        cursor.execute("""
+            SELECT input_text, output_text FROM saved_prompts 
+            WHERE user_id = ? AND prompt_type = 'negative' 
+            ORDER BY created_at DESC LIMIT 1
+        """, (user_id,))
+        neg = cursor.fetchone()
+        if neg:
+            result["negative"] = {"input": neg[0], "output": neg[1]}
+            
+    return jsonify(result)
+
 @app.route('/api/history/<int:user_id>', methods=['GET'])
 def get_history(user_id):
     with sqlite3.connect(DB_NAME) as conn:
