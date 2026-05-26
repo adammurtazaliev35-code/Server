@@ -4,9 +4,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
 import datetime
+import jwt
+from functools import wraps
 
 app = Flask(__name__)
 CORS(app)
+
+# Секретный ключ для подписи токенов (в продакшене выносится в .env)
+app.config['SECRET_KEY'] = 'super-secret-key-for-vkr-2026'
 
 DB_NAME = "database.db"
 
@@ -37,6 +42,34 @@ def init_db():
         conn.commit()
 
 init_db()
+
+# --- ДЕКОРАТОР БЕЗОПАСНОСТИ (JWT) ---
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        # Ищем токен в заголовках
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(" ")[1]
+        
+        if not token:
+            return jsonify({"error": "Токен отсутствует, доступ запрещен"}), 401
+        
+        try:
+            # Расшифровываем токен
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            current_user_id = data['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Срок действия токена истек. Войдите заново"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Недействительный токен"}), 401
+            
+        # Если всё отлично, передаем ID пользователя в функцию
+        return f(current_user_id, *args, **kwargs)
+    return decorated
+
 
 # --- ЭНДПОИНТЫ БЕЗОПАСНОСТИ ---
 
@@ -74,16 +107,24 @@ def login():
         user = cursor.fetchone()
         
     if user and check_password_hash(user[1], password):
-        return jsonify({"success": True, "userId": user[0], "username": username})
+        # ВМЕСТО ID ВЫДАЕМ ТОКЕН (действует 24 часа)
+        token = jwt.encode({
+            'user_id': user[0],
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        }, app.config['SECRET_KEY'], algorithm="HS256")
+        
+        return jsonify({"success": True, "token": token, "username": username})
     
     return jsonify({"error": "Неверный логин или пароль"}), 401
+
 
 # --- ЭНДПОИНТЫ ДЛЯ ДАННЫХ (ВКР: Хранение) ---
 
 @app.route('/api/save_prompt', methods=['POST'])
-def save_prompt():
+@token_required
+def save_prompt(current_user_id):
+    # ID пользователя теперь берется из токена (current_user_id), а не из JSON от фронтенда
     data = request.json
-    user_id = data.get('userId')
     p_type = data.get('type')
     inp = data.get('input')
     out = data.get('output')
@@ -91,23 +132,25 @@ def save_prompt():
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
         cursor.execute("INSERT INTO saved_prompts (user_id, prompt_type, input_text, output_text) VALUES (?, ?, ?, ?)",
-                       (user_id, p_type, inp, out))
+                       (current_user_id, p_type, inp, out))
         conn.commit()
     return jsonify({"success": True})
 
-@app.route('/api/get_last_prompts/<int:user_id>', methods=['GET'])
-def get_last_prompts(user_id):
+# УБРАЛИ <int:user_id> из пути. Сервер сам знает, кто делает запрос.
+@app.route('/api/get_last_prompts', methods=['GET'])
+@token_required
+def get_last_prompts(current_user_id):
     result = {"positive": None, "negative": None}
     
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
         
-        # Получаем последний положительный промпт
+        # Получаем последний положительный промпт для авторизованного пользователя
         cursor.execute("""
             SELECT input_text, output_text FROM saved_prompts 
             WHERE user_id = ? AND prompt_type = 'positive' 
             ORDER BY created_at DESC LIMIT 1
-        """, (user_id,))
+        """, (current_user_id,))
         pos = cursor.fetchone()
         if pos:
             result["positive"] = {"input": pos[0], "output": pos[1]}
@@ -117,18 +160,20 @@ def get_last_prompts(user_id):
             SELECT input_text, output_text FROM saved_prompts 
             WHERE user_id = ? AND prompt_type = 'negative' 
             ORDER BY created_at DESC LIMIT 1
-        """, (user_id,))
+        """, (current_user_id,))
         neg = cursor.fetchone()
         if neg:
             result["negative"] = {"input": neg[0], "output": neg[1]}
             
     return jsonify(result)
 
-@app.route('/api/history/<int:user_id>', methods=['GET'])
-def get_history(user_id):
+# УБРАЛИ <int:user_id> из пути
+@app.route('/api/history', methods=['GET'])
+@token_required
+def get_history(current_user_id):
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT prompt_type, input_text, output_text, created_at FROM saved_prompts WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+        cursor.execute("SELECT prompt_type, input_text, output_text, created_at FROM saved_prompts WHERE user_id = ? ORDER BY created_at DESC", (current_user_id,))
         history = cursor.fetchall()
     return jsonify(history)
 
