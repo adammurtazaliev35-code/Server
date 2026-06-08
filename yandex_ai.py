@@ -54,11 +54,17 @@ class YandexGPTClient:
     
             try:
                 response = requests.post(self.url, headers=self.headers, json=body, timeout=30)
-                response.raise_for_status()
+                
+                # Если ошибка, выводим подробный ответ от API
+                if response.status_code != 200:
+                    print(f"--- YandexGPT API ERROR {response.status_code} ---")
+                    print(f"Response: {response.text}")
+                    return None
+                
                 data = response.json()
                 return data["result"]["alternatives"][0]["message"]["text"]
             except Exception as e:
-                print(f"YandexGPT API error: {e}")
+                print(f"YandexGPT Connection error: {e}")
                 return None
 
 # Глобальный экземпляр клиента (будет инициализирован в app.py)
