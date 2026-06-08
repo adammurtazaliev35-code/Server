@@ -89,9 +89,9 @@ def build_from_db(user_input, model_key, locale='ru'):
         return ' '.join(parts)
 
 
-def build_prompt(user_input, model_key, locale='ru', auto_learn=False):
-    # 1. Пытаемся использовать ИИ (теперь YandexGPT)
-    ai_result = generate_with_ai(user_input, model_key, locale)
+def build_prompt(user_input, model_key, locale='ru', auto_learn=False, use_instructions=False):
+    # 1. Пытаемся использовать ИИ
+    ai_result = generate_with_ai(user_input, model_key, locale, use_instructions)
     if ai_result:
         return ai_result, "ai"
     
