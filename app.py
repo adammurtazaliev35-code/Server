@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
 import jwt
 from functools import wraps
+from yandex_ai import init_yandex_gpt
 import os
 
 from database import init_db, get_db_connection
@@ -12,6 +13,14 @@ from prompt_builder import build_prompt
 app = Flask(__name__)
 CORS(app)
 
+YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY')
+YANDEX_FOLDER_ID = os.environ.get('YANDEX_FOLDER_ID')
+if YANDEX_API_KEY and YANDEX_FOLDER_ID:
+    init_yandex_gpt(YANDEX_API_KEY, YANDEX_FOLDER_ID)
+    print("YandexGPT инициализирован успешно")
+else:
+    print("YandexGPT не настроен: проверьте переменные окружения YANDEX_API_KEY и YANDEX_FOLDER_ID")
+    
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'super-secret-key-for-vkr-2026')
 
 # Инициализируем БД (создаёт таблицы и наполняет словарь)
