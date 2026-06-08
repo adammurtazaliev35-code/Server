@@ -132,11 +132,13 @@ def build_prompt_endpoint():
     model_key = data.get('modelKey', 'default')
     locale = data.get('locale', 'ru')
     auto_learn = data.get('auto_learn', False)
-    
+    use_instructions = data.get('use_instructions', False) # Извлекаем параметр
+
     if not user_input:
         return jsonify({"error": "userInput required"}), 400
+
+    prompt_text, source = build_prompt(user_input, model_key, locale, auto_learn, use_instructions)
     
-    prompt_text, source = build_prompt(user_input, model_key, locale, auto_learn)
     return jsonify({
         "prompt": prompt_text,
         "source": source,
