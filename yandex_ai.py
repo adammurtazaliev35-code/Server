@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import re
 from typing import Optional
 
 class YandexGPTClient:
@@ -16,25 +17,30 @@ class YandexGPTClient:
         }
 
     def generate_prompt(self, user_input: str, model_key: str, locale: str = 'ru', use_instructions: bool = False) -> Optional[str]:
-            # 1. Извлекаем инструкции, если они есть в кавычках/скобках
-            import re
-            # Ищем текст в "" или ()
-            instructions = re.findall(r'["\'\(](.*?)["\'\)]', user_input)
-            
-            # Очищаем основной запрос от того, что мы вытащили как инструкции
-            clean_prompt = re.sub(r'["\'\(].*?["\'\)]', '', user_input).strip()
-            
-            # 2. Формируем текст инструкций для ИИ
-            instruction_text = ", ".join(instructions) if (use_instructions and instructions) else "нет дополнительных инструкций"
+            # 1. Извлекаем инструкции из текста (то, что в кавычках или скобках)
+            instructions = ""
+            if use_instructions:
+                # Находим всё, что в (...) или "..."
+                found = re.findall(r'[\(\"\'](.*?)[\)\"\']', user_input)
+                if found:
+                    instructions = ", ".join(found)
+                    # Удаляем инструкции из основного текста задачи, чтобы не дублировались
+                    clean_task = re.sub(r'[\(\"\'].*?[\)\"\']', '', user_input).strip()
+                else:
+                    clean_task = user_input
+            else:
+                clean_task = user_input
     
-            # 3. Системный промпт (строго для ИИ-редактора)
+            # 2. Очищаем задачу от "[Контекст модели]: ..."
+            clean_task = re.sub(r'\[.*?\]', '', clean_task).strip()
+    
+            # 3. Формируем "Архитектурный" системный промпт
             system_prompt = (
-                f"Ты — эксперт по созданию промптов. "
-                f"Твоя задача: улучшить промпт для модели {model_key}. "
-                f"Пользовательский запрос: {clean_prompt}. "
-                f"Инструкции к промпту: {instruction_text}. "
-                f"Сформируй итоговый, структурированный промпт, пригодный для прямой вставки в LLM. "
-                f"Отвечай только текстом промпта, без лишних пояснений."
+                f"Ты — профессиональный инженер промптов. Твоя задача — создать идеальный промпт для модели {model_key}. "
+                f"Используй следующий запрос пользователя: '{clean_task}'. "
+                f"Если есть инструкции: '{instructions}', добавь их в структуру промпта. "
+                "Ответ должен содержать: Роль ИИ, саму задачу, ограничения и требуемый формат ответа. "
+                "Не используй пояснения от себя, выдай только готовый промпт."
             )
     
             body = {
@@ -42,9 +48,18 @@ class YandexGPTClient:
                 "completionOptions": {"stream": False, "temperature": 0.6, "maxTokens": 500},
                 "messages": [
                     {"role": "system", "text": system_prompt},
-                    {"role": "user", "text": "Сгенерируй финальный промпт"}
+                    {"role": "user", "text": f"Задача: {clean_task}. Инструкции: {instructions}" if instructions else f"Задача: {clean_task}"}
                 ]
             }
+    
+            try:
+                response = requests.post(self.url, headers=self.headers, json=body, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                return data["result"]["alternatives"][0]["message"]["text"]
+            except Exception as e:
+                print(f"YandexGPT API error: {e}")
+                return None
 
 # Глобальный экземпляр клиента (будет инициализирован в app.py)
 yandex_client: Optional[YandexGPTClient] = None
