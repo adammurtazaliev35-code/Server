@@ -3,9 +3,6 @@ import os
 from database import get_db_connection
 from yandex_ai import generate_with_ai
 
-# Настройка OpenAI (если ключ задан в переменных окружения)
-openai.api_key = os.environ.get("OPENAI_API_KEY", "")
-
 def build_from_db(user_input, model_key, locale='ru'):
     """
     Собирает промпт по шаблонам из БД (аналог старой buildPrompt).
