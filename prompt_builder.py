@@ -2,6 +2,7 @@ import json
 import os
 import openai
 from database import get_db_connection
+from yandex_ai import generate_with_ai
 
 # Настройка OpenAI (если ключ задан в переменных окружения)
 openai.api_key = os.environ.get("OPENAI_API_KEY", "")
