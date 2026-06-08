@@ -16,38 +16,35 @@ class YandexGPTClient:
         }
 
     def generate_prompt(self, user_input: str, model_key: str, locale: str = 'ru', use_instructions: bool = False) -> Optional[str]:
-        instruction_rule = "Обязательно выдели дополнительные инструкции в кавычки или скобки." if use_instructions else "Инструкции не нужно выделять специальными символами."
-
-        system_prompt = (
-            f"Ты — эксперт по созданию промптов для LLM. "
-            f"Пользователь хочет улучшить свой запрос для модели {model_key}. "
-            f"Ответь только готовым промптом на языке {locale} без лишних пояснений. "
-            f"Промпт должен быть чётким, содержать роль, ограничения (если нужно) и требуемый формат ответа. "
-            f"Важно: результат должен представлять собой структурированные предложения и готовые шаблоны, "
-            f"а не простой список инструкций или тегов. {instruction_rule}"
-        )
-
-        body = {
-            "modelUri": f"gpt://{self.folder_id}/{self.model}",
-            "completionOptions": {
-                "stream": False,
-                "temperature": 0.6,
-                "maxTokens": 500
-            },
-            "messages": [
-                {"role": "system", "text": system_prompt},
-                {"role": "user", "text": f"Мой запрос: {user_input}"}
-            ]
-        }
-
-        try:
-            response = requests.post(self.url, headers=self.headers, json=body, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-            return data["result"]["alternatives"][0]["message"]["text"]
-        except Exception as e:
-            print(f"YandexGPT API error: {e}")
-            return None
+            # 1. Извлекаем инструкции, если они есть в кавычках/скобках
+            import re
+            # Ищем текст в "" или ()
+            instructions = re.findall(r'["\'\(](.*?)["\'\)]', user_input)
+            
+            # Очищаем основной запрос от того, что мы вытащили как инструкции
+            clean_prompt = re.sub(r'["\'\(].*?["\'\)]', '', user_input).strip()
+            
+            # 2. Формируем текст инструкций для ИИ
+            instruction_text = ", ".join(instructions) if (use_instructions and instructions) else "нет дополнительных инструкций"
+    
+            # 3. Системный промпт (строго для ИИ-редактора)
+            system_prompt = (
+                f"Ты — эксперт по созданию промптов. "
+                f"Твоя задача: улучшить промпт для модели {model_key}. "
+                f"Пользовательский запрос: {clean_prompt}. "
+                f"Инструкции к промпту: {instruction_text}. "
+                f"Сформируй итоговый, структурированный промпт, пригодный для прямой вставки в LLM. "
+                f"Отвечай только текстом промпта, без лишних пояснений."
+            )
+    
+            body = {
+                "modelUri": f"gpt://{self.folder_id}/{self.model}",
+                "completionOptions": {"stream": False, "temperature": 0.6, "maxTokens": 500},
+                "messages": [
+                    {"role": "system", "text": system_prompt},
+                    {"role": "user", "text": "Сгенерируй финальный промпт"}
+                ]
+            }
 
 # Глобальный экземпляр клиента (будет инициализирован в app.py)
 yandex_client: Optional[YandexGPTClient] = None
