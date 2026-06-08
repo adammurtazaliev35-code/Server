@@ -16,14 +16,17 @@ class YandexGPTClient:
             "Content-Type": "application/json"
         }
 
-    def generate_prompt(self, user_input: str, model_key: str, locale: str = 'ru') -> Optional[str]:
-        system_prompt = (
-            f"Ты — эксперт по созданию промптов для LLM. "
-            f"Пользователь хочет улучшить свой запрос для модели {model_key}. "
-            f"Ответь только готовым промптом на языке {locale} без лишних пояснений. "
-            f"Промпт должен быть чётким, структурированным, содержать роль, инструкции, "
-            f"ограничения (если нужно) и требуемый формат ответа."
-        )
+def generate_prompt(self, user_input: str, model_key: str, locale: str = 'ru', use_instructions: bool = False) -> Optional[str]:
+    # Добавляем условие для системного промпта
+    instruction_rule = "Обязательно выдели дополнительные инструкции в кавычки или скобки." if use_instructions else "Инструкции не нужно выделять специальными символами."
+
+    system_prompt = (
+        f"Ты — эксперт по созданию промптов для LLM. "
+        f"Пользователь хочет улучшить свой запрос для модели {model_key}. "
+        f"Ответь только готовым промптом на языке {locale} без лишних пояснений. "
+        f"Промпт должен быть чётким, структурированным, содержать роль, инструкции, "
+        f"ограничения (если нужно) и требуемый формат ответа. {instruction_rule}"
+    )
 
         body = {
             "modelUri": f"gpt://{self.folder_id}/{self.model}",
