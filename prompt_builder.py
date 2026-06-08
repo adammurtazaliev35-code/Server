@@ -87,46 +87,11 @@ def build_from_db(user_input, model_key, locale='ru'):
         
         return ' '.join(parts)
 
-def generate_with_ai(user_input, model_key, locale='ru'):
-    """
-    Вызывает OpenAI API для генерации улучшенного промпта.
-    Возвращает строку или None при ошибке / отсутствии ключа.
-    """
-    if not openai.api_key:
-        return None
-    
-    system_prompt = (
-        f"Ты — эксперт по созданию промптов для LLM. "
-        f"Пользователь хочет улучшить свой запрос для модели {model_key}. "
-        f"Ответь только готовым промптом на языке {locale} без лишних пояснений. "
-        f"Промпт должен быть чётким, структурированным, содержать роль, инструкции, "
-        f"ограничения (если нужно) и требуемый формат ответа."
-    )
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # или gpt-4 если есть доступ
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Мой запрос: {user_input}"}
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"OpenAI error: {e}")
-        return None
 
 def build_prompt(user_input, model_key, locale='ru', auto_learn=False):
-    """
-    Главная функция: сначала пытается использовать ИИ, при неудаче — БД.
-    Если auto_learn=True и ИИ успешен, можно в будущем сохранить результат в БД (расширение словаря).
-    Пока просто возвращает промпт и источник.
-    """
-    # 1. Попробовать ИИ
+    # 1. Пытаемся использовать ИИ (теперь YandexGPT)
     ai_result = generate_with_ai(user_input, model_key, locale)
     if ai_result:
-        # TODO: если auto_learn, можно вызвать функцию обновления БД (например, добавить новые ключевые слова)
         return ai_result, "ai"
     
     # 2. Fallback на БД
