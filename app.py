@@ -23,10 +23,10 @@ else:
     
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'super-secret-key-for-vkr-2026')
 
-# Инициализируем БД (создаёт таблицы и наполняет словарь)
+# Инициализируем БД 
 init_db()
 
-# --- ДЕКОРАТОР JWT (без изменений) ---
+# --- ДЕКОРАТОР JWT ---
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -47,7 +47,7 @@ def token_required(f):
         return f(current_user_id, *args, **kwargs)
     return decorated
 
-# --- ЭНДПОИНТЫ АВТОРИЗАЦИИ (без изменений) ---
+# --- ЭНДПОИНТЫ АВТОРИЗАЦИИ ---
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.json
@@ -79,7 +79,7 @@ def login():
         return jsonify({"success": True, "token": token, "username": username})
     return jsonify({"error": "Неверный логин или пароль"}), 401
 
-# --- ЭНДПОИНТЫ ДЛЯ СОХРАНЕНИЯ/ЗАГРУЗКИ ПРОМПТОВ (без изменений, кроме импорта get_db_connection) ---
+# --- ЭНДПОИНТЫ ДЛЯ СОХРАНЕНИЯ/ЗАГРУЗКИ ---
 @app.route('/api/save_prompt', methods=['POST'])
 @token_required
 def save_prompt(current_user_id):
@@ -124,9 +124,10 @@ def get_history(current_user_id):
         ).fetchall()
     return jsonify([dict(row) for row in rows])
 
-# --- НОВЫЙ ЭНДПОИНТ: ГЕНЕРАЦИЯ ПРОМПТА (СЛОВАРЬ + ИИ) ---
+# --- НОВЫЙ ЭНДПОИНТ: ГЕНЕРАЦИЯ ПРОМПТА ---
 @app.route('/api/build_prompt', methods=['POST'])
-def build_prompt_endpoint():
+@token_required
+def build_prompt_endpoint(current_user_id):
     data = request.json
     user_input = data.get('userInput')
     model_key = data.get('modelKey', 'default')
@@ -144,25 +145,6 @@ def build_prompt_endpoint():
         "source": source,
         "model": model_key
     })
-
-# --- (Опционально) Админский эндпоинт для ручного пополнения словаря ---
-@app.route('/api/admin/refresh_dictionary', methods=['POST'])
-@token_required
-def admin_refresh(current_user_id):
-    # Здесь можно проверить, что пользователь — администратор (например, по username)
-    # Пока просто перезагружает начальные данные (осторожно!)
-    # В реальном проекте лучше сделать отдельную таблицу admin_roles.
-    with get_db_connection() as conn:
-        # Очистка таблиц словаря и повторная загрузка
-        conn.execute("DELETE FROM category_localized")
-        conn.execute("DELETE FROM categories")
-        conn.execute("DELETE FROM connectors")
-        conn.execute("DELETE FROM model_rules")
-        # Вызов функции загрузки начальных данных (можно импортировать из database)
-        from database import _load_initial_dictionary_data
-        _load_initial_dictionary_data(conn.cursor())
-        conn.commit()
-    return jsonify({"success": True, "message": "Словарь перезагружен из резервной копии"})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
