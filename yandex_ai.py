@@ -50,18 +50,25 @@ class YandexGPTClient:
                     {"role": "user", "text": f"Задача: {clean_task}. Инструкции: {instructions}" if instructions else f"Задача: {clean_task}"}
                 ]
             }
-    
+
             try:
                 response = requests.post(self.url, headers=self.headers, json=body, timeout=30)
-                
-                # Если ошибка, выводим подробный ответ от API
+            
+            # Если ошибка, выводим подробный ответ от API
                 if response.status_code != 200:
                     print(f"--- YandexGPT API ERROR {response.status_code} ---")
                     print(f"Response: {response.text}")
                     return None
-                
+            
                 data = response.json()
-                return data["result"]["alternatives"][0]["message"]["text"]
+                result_text = data["result"]["alternatives"][0]["message"]["text"]
+                
+                # ДОБАВЛЯЕМ ИНСТРУКЦИИ В КОНЕЦ БЕЗ ИЗМЕНЕНИЙ:
+                if use_instructions and instructions:
+                    result_text += f"\n\nИнструкции: {instructions}"
+                    
+                return result_text
+            
             except Exception as e:
                 print(f"YandexGPT Connection error: {e}")
                 return None
