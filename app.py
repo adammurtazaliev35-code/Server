@@ -21,7 +21,7 @@ if YANDEX_API_KEY and YANDEX_FOLDER_ID:
 else:
     print("YandexGPT не настроен: проверьте переменные окружения YANDEX_API_KEY и YANDEX_FOLDER_ID")
     
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'super-secret-key-for-vkr-2026')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'secret-key-for-local-pc-launch-default')
 
 # Инициализируем БД 
 init_db()
