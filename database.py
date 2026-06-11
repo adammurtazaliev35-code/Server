@@ -83,7 +83,6 @@ def init_db():
         conn.commit()
 
 def _load_initial_dictionary_data(cursor):
-    """Заполняет таблицы начальными данными (аналог старого dictionary.js)"""
     # Коннекторы
     connectors_data = [
         ('ru', 'intro', 'Действуй как'),
