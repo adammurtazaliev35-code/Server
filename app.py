@@ -126,8 +126,7 @@ def get_history(current_user_id):
 
 # --- НОВЫЙ ЭНДПОИНТ: ГЕНЕРАЦИЯ ПРОМПТА ---
 @app.route('/api/build_prompt', methods=['POST'])
-@token_required
-def build_prompt_endpoint(current_user_id):
+def build_prompt_endpoint():
     data = request.json
     user_input = data.get('userInput')
     model_key = data.get('modelKey', 'default')
