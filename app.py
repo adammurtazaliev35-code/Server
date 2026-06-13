@@ -47,6 +47,28 @@ def token_required(f):
         return f(current_user_id, *args, **kwargs)
     return decorated
 
+def token_optional(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        current_user_id = None
+        
+        # Проверяем, прислал ли клиент заголовок Authorization
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(" ")[1]
+                try:
+                    # Пытаемся расшифровать токен
+                    data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+                    current_user_id = data['user_id']
+                except Exception:
+                    # Если токен неверный или истек, мы не выдаем ошибку 401, 
+                    # а просто считаем пользователя гостем
+                    current_user_id = None
+                    
+        # Передаем id (число или None) в функцию эндпоинта
+        return f(current_user_id, *args, **kwargs)
+    return decorated
 # --- ЭНДПОИНТЫ АВТОРИЗАЦИИ ---
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -126,7 +148,7 @@ def get_history(current_user_id):
 
 # --- НОВЫЙ ЭНДПОИНТ: ГЕНЕРАЦИЯ ПРОМПТА ---
 @app.route('/api/build_prompt', methods=['POST'])
-@token_required
+@token_optional
 def build_prompt_endpoint(current_user_id):
     data = request.json
     user_input = data.get('userInput')
